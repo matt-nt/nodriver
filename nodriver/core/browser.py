@@ -410,17 +410,27 @@ class Browser:
 
         self._http = HTTPApi((self.config.host, self.config.port))
         util.get_registered_instances().add(self)
-        await asyncio.sleep(0.25)
-        for _ in range(5):
+
+        # --- Configurable startup probe (defaults preserve current behavior) ---
+        import os
+        initial_delay = getattr(self.config, "startup_initial_delay_s",
+                                float(os.getenv("NODRIVER_STARTUP_INITIAL_DELAY", 0.25)))
+        attempts = getattr(self.config, "startup_probe_attempts",
+                           int(os.getenv("NODRIVER_STARTUP_ATTEMPTS", 5)))
+        interval = getattr(self.config, "startup_probe_interval_s",
+                           float(os.getenv("NODRIVER_STARTUP_INTERVAL", 0.5)))
+
+        await asyncio.sleep(initial_delay)
+        for i in range(attempts):
             try:
                 self.info = ContraDict(await self._http.get("version"), silent=True)
-            except (Exception,):
-                if _ == 4:
+            except Exception:
+                if i == attempts - 1:
                     logger.debug("could not start", exc_info=True)
-                await self.sleep(0.5)
+                await self.sleep(interval)
             else:
                 break
-
+                
         if not self.info:
             raise Exception(
                 (
